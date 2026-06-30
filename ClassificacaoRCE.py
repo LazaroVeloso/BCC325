@@ -1,10 +1,17 @@
 """
 Classificação do Padrão de Recuperação Cardíaca Pós-Esforço — Random Forest
-Dataset: Cleveland Heart Disease (UCI)   |   
+Dataset: Cleveland Heart Disease (UCI)
 
 RÓTULO  → criado com 4 variáveis clínicas por sistema de pontuação ponderada
-FEATURES → todas as 13 variáveis clínicas disponíveis no dataset
+            (oldpeak, exang, slope, thalach)
+FEATURES → 9 variáveis de perfil clínico de REPOUSO (sem as 4 do rótulo)
+            Correção de data leakage: variáveis usadas para criar o rótulo
+            foram removidas do vetor de entrada do modelo.
 
+Referência clínica dos pesos do score:
+  Cole CR et al. "Heart-Rate Recovery Immediately after Exercise as a Predictor
+  of Mortality." NEJM, 1999. — fundamenta oldpeak e slope como indicadores
+  primários de recuperação cardíaca pós-esforço.
 """
 
 import numpy as np
@@ -36,7 +43,6 @@ df = pd.read_csv(
 print(f"Dataset carregado: {len(df)} pacientes, {df.shape[1]} colunas")
 print(f"Valores ausentes:\n{df.isnull().sum()[df.isnull().sum() > 0]}\n")
 
-# Remove linhas com qualquer valor ausente
 df_clean = df.dropna().copy()
 print(f"Pacientes após remoção de NaNs: {len(df_clean)}\n")
 
@@ -46,6 +52,8 @@ print(f"Pacientes após remoção de NaNs: {len(df_clean)}\n")
 # Score máximo possível = 9 pontos
 #
 #  oldpeak (indicador mais forte — vale até 3 pts)
+#    Fundamentado em: Cole et al. (NEJM, 1999) — depressão do ST
+#    é o principal marcador de recuperação cardíaca pós-esforço.
 #    < 1.0  → +3   alteração ST mínima
 #    < 2.0  → +1   alteração ST moderada
 #    >= 2.0 → +0   alteração ST preocupante
@@ -55,12 +63,13 @@ print(f"Pacientes após remoção de NaNs: {len(df_clean)}\n")
 #    1      → +0   com angina
 #
 #  slope (forma da curva ST — vale até 2 pts)
-#    1      → +2   ascendente (bom)
+#    Fundamentado em: Gibbons et al. ACC/AHA Guidelines (2002)
+#    1      → +2   ascendente (bom prognóstico)
 #    2      → +1   plana (neutro)
-#    3      → +0   descendente (ruim)
+#    3      → +0   descendente (mau prognóstico)
 #
 #  thalach (frequência cardíaca máxima — vale até 2 pts)
-#    >= 160 → +2   excelente capacidade
+#    >= 160 → +2   excelente capacidade funcional
 #    >= 140 → +1   razoável
 #    < 140  → +0   baixa capacidade
 #
@@ -72,23 +81,19 @@ print(f"Pacientes após remoção de NaNs: {len(df_clean)}\n")
 def classificar_recuperacao(row):
     score = 0
 
-    # oldpeak — peso maior (max 3 pts)
     if row["oldpeak"] < 1.0:
         score += 3
     elif row["oldpeak"] < 2.0:
         score += 1
 
-    # exang (max 2 pts)
     if row["exang"] == 0:
         score += 2
 
-    # slope (max 2 pts)
     if row["slope"] == 1:
         score += 2
     elif row["slope"] == 2:
         score += 1
 
-    # thalach (max 2 pts)
     if row["thalach"] >= 160:
         score += 2
     elif row["thalach"] >= 140:
@@ -103,7 +108,6 @@ def classificar_recuperacao(row):
 
 df_clean["recuperacao"] = df_clean.apply(classificar_recuperacao, axis=1)
 
-# Distribuição com percentual
 print("Distribuição dos rótulos (score ponderado):")
 counts = df_clean["recuperacao"].value_counts()
 total  = len(df_clean)
@@ -112,17 +116,21 @@ for classe, n in counts.items():
 print()
 
 # ─────────────────────────────────────────────
-# 3. FEATURES — TODAS AS 13 VARIÁVEIS CLÍNICAS
+# 3. FEATURES — PERFIL CLÍNICO DE REPOUSO (9 variáveis)
 # ─────────────────────────────────────────────
-# O rótulo foi criado com thalach/exang/oldpeak/slope.
-# O RF treina com as 13 colunas restantes.
-# Isso permite descobrir relações não codificadas na regra de pontuação.
+# Variáveis REMOVIDAS para evitar data leakage:
+#   thalach, exang, oldpeak, slope
+# Essas 4 foram usadas para criar o rótulo — mantê-las
+# faria o RF reaprender a regra de pontuação, não padrões reais.
+#
+# O modelo agora responde a pergunta genuína:
+# "Dado o perfil clínico de repouso de um paciente,
+#  é possível prever sua recuperação cardíaca pós-esforço?"
 
-all_features = [
-    "age", "sex", "cp", "trestbps", "chol",
-    "fbs", "restecg", "thalach", "exang",
-    "oldpeak", "slope", "ca", "thal"
-]
+LABEL_VARS  = {"thalach", "exang", "oldpeak", "slope"}
+all_features = [c for c in COLS if c not in LABEL_VARS and c != "target" and c != "recuperacao"]
+
+print(f"Features de entrada ({len(all_features)}): {all_features}\n")
 
 X = df_clean[all_features].values
 y = df_clean["recuperacao"].values
@@ -168,21 +176,21 @@ print(classification_report(y_test, y_pred, target_names=le.classes_))
 # ─────────────────────────────────────────────
 # 6. VISUALIZAÇÕES
 # ─────────────────────────────────────────────
-feat_imp    = rf.feature_importances_
-sorted_idx  = np.argsort(feat_imp)
+feat_imp   = rf.feature_importances_
+sorted_idx = np.argsort(feat_imp)
 
 fig, axes = plt.subplots(2, 2, figsize=(15, 11))
 fig.suptitle(
-    "Random Forest – Recuperação Cardíaca Pós-Esforço (v3)\n"
-    "Score Ponderado | 13 Features | Dataset Cleveland (UCI)",
+    "Random Forest – Recuperação Cardíaca Pós-Esforço\n"
+    "Score Ponderado | 9 Features de Repouso | Dataset Cleveland (UCI)",
     fontsize=13, fontweight="bold"
 )
 
 # ── 6a. Distribuição dos rótulos ─────────────
 ax = axes[0, 0]
-order  = ["BOA", "MODERADA", "RUIM"]
+order          = ["BOA", "MODERADA", "RUIM"]
 counts_ordered = [counts.get(c, 0) for c in order]
-colors = ["#2ecc71", "#f39c12", "#e74c3c"]
+colors         = ["#2ecc71", "#f39c12", "#e74c3c"]
 bars = ax.bar(order, counts_ordered, color=colors, edgecolor="white", linewidth=1.2)
 ax.set_title("Distribuição das Classes de Recuperação")
 ax.set_xlabel("Classe")
@@ -192,7 +200,7 @@ for bar, val in zip(bars, counts_ordered):
     ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 1,
             f"{val}\n({pct:.1f}%)", ha="center", va="bottom", fontweight="bold", fontsize=9)
 
-# ── 6b. Importância das 13 features ──────────
+# ── 6b. Importância das features ─────────────
 ax = axes[0, 1]
 palette = plt.cm.tab20.colors
 ax.barh(
@@ -201,7 +209,7 @@ ax.barh(
     color=[palette[i % len(palette)] for i in sorted_idx],
     edgecolor="white"
 )
-ax.set_title("Importância das Features (Gini) — 13 variáveis")
+ax.set_title(f"Importância das Features (Gini) — {len(all_features)} variáveis de repouso")
 ax.set_xlabel("Importância Média")
 for i, idx in enumerate(sorted_idx):
     ax.text(feat_imp[idx] + 0.002, i,
@@ -231,8 +239,8 @@ for i, val in enumerate(cv_scores):
             ha="center", va="bottom", fontsize=8)
 
 plt.tight_layout()
-plt.savefig("resultados_rf_v3.png", dpi=150, bbox_inches="tight")
-print("\nGráfico salvo em: resultados_rf_v3.png")
+plt.savefig("resultados_rf.png", dpi=150, bbox_inches="tight")
+print("\nGráfico salvo em: resultados_rf.png")
 
 # ─────────────────────────────────────────────
 # 7. TOP 5 FEATURES MAIS IMPORTANTES
@@ -247,39 +255,29 @@ for rank, idx in enumerate(top5, 1):
 # ─────────────────────────────────────────────
 # 8. EXEMPLOS DE PREDIÇÃO INDIVIDUAL
 # ─────────────────────────────────────────────
-# Ordem: age, sex, cp, trestbps, chol, fbs, restecg,
-#        thalach, exang, oldpeak, slope, ca, thal
+# Ordem das features: age, sex, cp, trestbps, chol, fbs, restecg, ca, thal
+# (sem thalach, exang, oldpeak, slope)
 print("\n" + "=" * 55)
 print("EXEMPLOS DE PREDIÇÃO INDIVIDUAL")
 print("=" * 55)
 
 exemplos = {
-    "Paciente A – perfil excelente (esperado BOA)":
-        [45, 0, 2, 120, 200, 0, 0, 170, 0, 0.3, 1, 0, 3],
+    "Paciente A – perfil jovem saudável (esperado BOA)":
+        [45, 0, 2, 120, 200, 0, 0, 0, 3],
     "Paciente B – perfil intermediário (esperado MODERADA)":
-        [55, 1, 3, 140, 250, 0, 1, 148, 0, 1.5, 2, 1, 3],
-    "Paciente C – perfil grave (esperado RUIM)":
-        [63, 1, 4, 160, 280, 1, 2, 112, 1, 3.1, 3, 3, 7],
+        [55, 1, 3, 140, 250, 0, 1, 1, 3],
+    "Paciente C – perfil de risco elevado (esperado RUIM)":
+        [63, 1, 4, 160, 280, 1, 2, 3, 7],
     "Paciente D – caso ambíguo":
-        [58, 1, 2, 130, 240, 0, 0, 138, 0, 1.8, 2, 1, 3],
+        [58, 1, 2, 130, 240, 0, 0, 1, 3],
 }
 
 for nome, vals in exemplos.items():
-    # score manual (apenas as 4 variáveis do rótulo)
-    thalach = vals[7]; exang = vals[8]
-    oldpeak = vals[9]; slope = vals[10]
-    score = (
-        (3 if oldpeak < 1.0 else 1 if oldpeak < 2.0 else 0) +
-        (2 if exang == 0 else 0) +
-        (2 if slope == 1 else 1 if slope == 2 else 0) +
-        (2 if thalach >= 160 else 1 if thalach >= 140 else 0)
-    )
-    pred_enc = rf.predict([vals])[0]
-    proba    = rf.predict_proba([vals])[0]
-    classe   = le.inverse_transform([pred_enc])[0]
+    pred_enc  = rf.predict([vals])[0]
+    proba     = rf.predict_proba([vals])[0]
+    classe    = le.inverse_transform([pred_enc])[0]
     proba_str = " | ".join(f"{c}: {p:.2f}" for c, p in zip(le.classes_, proba))
     print(f"{nome}")
-    print(f"  Score clínico : {score}/9")
     print(f"  Predição RF   : {classe}")
     print(f"  Probabilidades: {proba_str}\n")
 
