@@ -118,14 +118,6 @@ print()
 # ─────────────────────────────────────────────
 # 3. FEATURES — PERFIL CLÍNICO DE REPOUSO (9 variáveis)
 # ─────────────────────────────────────────────
-# Variáveis REMOVIDAS para evitar data leakage:
-#   thalach, exang, oldpeak, slope
-# Essas 4 foram usadas para criar o rótulo — mantê-las
-# faria o RF reaprender a regra de pontuação, não padrões reais.
-#
-# O modelo agora responde a pergunta genuína:
-# "Dado o perfil clínico de repouso de um paciente,
-#  é possível prever sua recuperação cardíaca pós-esforço?"
 
 LABEL_VARS  = {"thalach", "exang", "oldpeak", "slope"}
 all_features = [c for c in COLS if c not in LABEL_VARS and c != "target" and c != "recuperacao"]
