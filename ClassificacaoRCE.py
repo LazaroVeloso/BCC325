@@ -1,19 +1,3 @@
-"""
-Classificação do Padrão de Recuperação Cardíaca Pós-Esforço — Random Forest
-Dataset: Cleveland Heart Disease (UCI)
-
-RÓTULO  → criado com 4 variáveis clínicas por sistema de pontuação ponderada
-            (oldpeak, exang, slope, thalach)
-FEATURES → 9 variáveis de perfil clínico de REPOUSO (sem as 4 do rótulo)
-            Correção de data leakage: variáveis usadas para criar o rótulo
-            foram removidas do vetor de entrada do modelo.
-
-Referência clínica dos pesos do score:
-  Cole CR et al. "Heart-Rate Recovery Immediately after Exercise as a Predictor
-  of Mortality." NEJM, 1999. — fundamenta oldpeak e slope como indicadores
-  primários de recuperação cardíaca pós-esforço.
-"""
-
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -49,35 +33,6 @@ print(f"Pacientes após remoção de NaNs: {len(df_clean)}\n")
 # ─────────────────────────────────────────────
 # 2. RÓTULO — SCORE CLÍNICO PONDERADO
 # ─────────────────────────────────────────────
-# Score máximo possível = 9 pontos
-#
-#  oldpeak (indicador mais forte — vale até 3 pts)
-#    Fundamentado em: Cole et al. (NEJM, 1999) — depressão do ST
-#    é o principal marcador de recuperação cardíaca pós-esforço.
-#    < 1.0  → +3   alteração ST mínima
-#    < 2.0  → +1   alteração ST moderada
-#    >= 2.0 → +0   alteração ST preocupante
-#
-#  exang (angina durante exercício — vale até 2 pts)
-#    0      → +2   sem angina
-#    1      → +0   com angina
-#
-#  slope (forma da curva ST — vale até 2 pts)
-#    Fundamentado em: Gibbons et al. ACC/AHA Guidelines (2002)
-#    1      → +2   ascendente (bom prognóstico)
-#    2      → +1   plana (neutro)
-#    3      → +0   descendente (mau prognóstico)
-#
-#  thalach (frequência cardíaca máxima — vale até 2 pts)
-#    >= 160 → +2   excelente capacidade funcional
-#    >= 140 → +1   razoável
-#    < 140  → +0   baixa capacidade
-#
-#  Classificação:
-#    score 7-9  → BOA
-#    score 4-6  → MODERADA
-#    score 0-3  → RUIM
-
 def classificar_recuperacao(row):
     score = 0
 
@@ -178,7 +133,6 @@ fig.suptitle(
     fontsize=13, fontweight="bold"
 )
 
-# ── 6a. Distribuição dos rótulos ─────────────
 ax = axes[0, 0]
 order          = ["BOA", "MODERADA", "RUIM"]
 counts_ordered = [counts.get(c, 0) for c in order]
@@ -192,7 +146,6 @@ for bar, val in zip(bars, counts_ordered):
     ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 1,
             f"{val}\n({pct:.1f}%)", ha="center", va="bottom", fontweight="bold", fontsize=9)
 
-# ── 6b. Importância das features ─────────────
 ax = axes[0, 1]
 palette = plt.cm.tab20.colors
 ax.barh(
@@ -207,14 +160,12 @@ for i, idx in enumerate(sorted_idx):
     ax.text(feat_imp[idx] + 0.002, i,
             f"{feat_imp[idx]:.3f}", va="center", fontsize=8)
 
-# ── 6c. Matriz de confusão ───────────────────
 ax = axes[1, 0]
 cm   = confusion_matrix(y_test, y_pred)
 disp = ConfusionMatrixDisplay(cm, display_labels=le.classes_)
 disp.plot(ax=ax, colorbar=False, cmap="Blues")
 ax.set_title("Matriz de Confusão (Conjunto de Teste)")
 
-# ── 6d. Acurácia por fold ────────────────────
 ax = axes[1, 1]
 fold_nums  = np.arange(1, len(cv_scores) + 1)
 bar_colors = ["#2ecc71" if s >= cv_scores.mean() else "#e74c3c" for s in cv_scores]
@@ -247,8 +198,6 @@ for rank, idx in enumerate(top5, 1):
 # ─────────────────────────────────────────────
 # 8. EXEMPLOS DE PREDIÇÃO INDIVIDUAL
 # ─────────────────────────────────────────────
-# Ordem das features: age, sex, cp, trestbps, chol, fbs, restecg, ca, thal
-# (sem thalach, exang, oldpeak, slope)
 print("\n" + "=" * 55)
 print("EXEMPLOS DE PREDIÇÃO INDIVIDUAL")
 print("=" * 55)
